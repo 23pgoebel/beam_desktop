@@ -1,9 +1,16 @@
 # Beam Designer
 
 ## Purpose
-A single-file web app for designing and checking a simply supported or
-cantilever beam. The app will calculate reactions, shear, moment,
-deflection, bending stress, and whether the beam is strong and stiff enough.
+A Python desktop app built with Tkinter for designing and checking a simply
+supported or cantilever beam. The app will calculate reactions, shear,
+moment, deflection, bending stress, and whether the beam is strong and stiff
+enough.
+
+## Platform
+- Implement as a desktop application in Python using Tkinter for its interface
+- Present the beam workspace, inputs, and results in a desktop window
+- Keep this specification focused on the application; web and mobile versions
+  are out of scope
 
 ## Inputs
 - Support type: simply supported or cantilever
@@ -79,8 +86,9 @@ deflection, bending stress, and whether the beam is strong and stiff enough.
   out of scope for this version
 
 ## Layout
-- Desktop: left controls, center beam and diagrams, and right results
-- Tablet and mobile: panels stack in a readable order
+- Arrange left controls, center beam and diagrams, and right results in the
+  desktop window
+- Allow the window to resize while keeping panels and controls readable
 - Keep the interface on a white background with pale neutral panels
 - Use minimal borders, clear typography, and restrained shadows
 - Use muted colors consistently: blue for loads, teal for shear, amber for
