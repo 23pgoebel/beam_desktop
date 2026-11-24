@@ -26,3 +26,8 @@
 - Asked: Add an Export results button that saves x, V, M, and deflection to an Excel-compatible CSV; update the spec and rerun validation.
 - Changed: Added CSV export, updated the spec and validation documentation, and added export checks.
 - Worked: Yes; all 13 beam validation cases and the CSV and save/open checks passed.
+
+## 2026-11-24
+- Asked: Add a button to save inputs, diagrams, and checks as a PDF calculation sheet, following the same process.
+- Changed: Updated the spec, added PDF calculation-sheet export, and added PDF validation checks.
+- Worked: Yes; all 13 beam validation cases and file export checks passed. PDF content and structure were checked; visual rendering was not inspected.

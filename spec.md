@@ -87,6 +87,11 @@ enough.
   (kip-ft), and deflection (in) at each calculation point to an Excel-compatible
   CSV file with column headers and units
 - Require valid beam inputs and loads before exporting results
+- Provide a Calculation sheet button to save a PDF suitable for submission,
+  listing inputs and loads at the top followed by diagrams, results, and checks
+- Include reactions, maxima and their locations, bending and deflection checks,
+  the proportional-limit warning, units, and calculation assumptions
+- Require a valid beam setup and loads before creating a calculation sheet
 
 ## Save and open
 - Provide File > Save and File > Open for beam designs in a local file
@@ -148,6 +153,7 @@ Additional test cases should cover:
 - Saving and opening a design with point and uniform loads and a custom limit
 - Invalid or unreadable design files leave the current design intact
 - Exported CSV headers and rows match the calculated beam values
+- PDF calculation sheet includes inputs, loads, diagrams, and checks
 
 Store hand calculations and test cases in `02_validation/README.md` and
 related files under `02_validation/`. Store example screenshots or exported
@@ -161,4 +167,4 @@ results in `03_output/`.
 - Beam self-weight
 - Dynamic or moving loads
 - Metric-unit mode
-- Printing and PDF export
+- Direct printing

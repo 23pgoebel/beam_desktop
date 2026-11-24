@@ -25,6 +25,8 @@ point and uniform loads, allowable stress, and a custom L/240 limit. It
 confirmed that malformed and incomplete files leave the current design intact.
 The CSV export check confirms its headers, units, and every data row against the
 calculated results, and checks that invalid inputs prevent export.
+The calculation-sheet check confirms PDF structure, inputs, load entries,
+diagram labels, and checks, and verifies invalid inputs prevent PDF export.
 
 | Validation case | Expected | Actual | Result |
 |---|---|---|---|

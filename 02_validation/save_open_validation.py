@@ -33,10 +33,24 @@ def main():
             expected_rows = list(zip(before["xs"], before["shears"], before["moments"], before["deflections"]))
             assert len(rows) == len(expected_rows) + 1
             assert [tuple(map(float, row)) for row in rows[1:]] == expected_rows
+            pdf_path = Path(directory) / "calculation.pdf"
+            with patch("beam_designer.filedialog.asksaveasfilename", return_value=str(pdf_path)):
+                app.export_calculation_sheet()
+            pdf = pdf_path.read_bytes()
+            assert pdf.startswith(b"%PDF-1.4") and pdf.rstrip().endswith(b"%%EOF")
+            for expected in (b"INPUTS", b"A992 Steel", b"W12x26", b"Uniform load", b"Point load",
+                             b"RESULTS AND CHECKS", b"PASS", b"DIAGRAMS", b"Shear V", b"Moment M", b"Deflection"):
+                assert expected in pdf, expected
+            startxref = int(pdf.rsplit(b"startxref\n", 1)[1].splitlines()[0])
+            assert pdf[startxref:startxref + 4] == b"xref"
             app.deflection_var.set("0")
             with patch("beam_designer.filedialog.asksaveasfilename") as dialog, \
                     patch("beam_designer.messagebox.showerror") as error:
                 app.export_results()
+            assert error.called and not dialog.called
+            with patch("beam_designer.filedialog.asksaveasfilename") as dialog, \
+                    patch("beam_designer.messagebox.showerror") as error:
+                app.export_calculation_sheet()
             assert error.called and not dialog.called
             app.deflection_var.set("240")
             with patch("beam_designer.filedialog.asksaveasfilename", return_value=str(path)):
@@ -82,7 +96,7 @@ def main():
             assert app.grade_var.get() == "Spruce-Pine-Fir No.2" and app.section_var.get() == "2×10"
             assert app.loads == [Load("point", 2, position=20)]
             assert app.result["max_moment"] == 40
-        print("CSV export, invalid input, save/open round trip, custom limit, and invalid-file preservation: PASS")
+        print("PDF and CSV export, invalid input, save/open round trip, and invalid-file preservation: PASS")
     finally:
         app.destroy()
 
