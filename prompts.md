@@ -31,3 +31,8 @@
 - Asked: Add a button to save inputs, diagrams, and checks as a PDF calculation sheet, following the same process.
 - Changed: Updated the spec, added PDF calculation-sheet export, and added PDF validation checks.
 - Worked: Yes; all 13 beam validation cases and file export checks passed. PDF content and structure were checked; visual rendering was not inspected.
+
+## 2026-11-24
+- Asked: Write a short README describing the app, packages to install, and startup command.
+- Changed: Added README.md and ignored generated Python cache files.
+- Worked: Yes; the README reflects the app imports and entry point. No tests were run for this documentation change.
