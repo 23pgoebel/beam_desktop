@@ -23,6 +23,8 @@ Run on 2026-11-24. All 13 validation checks passed.
 The save/open check also passed: it round-tripped steel and lumber designs,
 point and uniform loads, allowable stress, and a custom L/240 limit. It
 confirmed that malformed and incomplete files leave the current design intact.
+The CSV export check confirms its headers, units, and every data row against the
+calculated results, and checks that invalid inputs prevent export.
 
 | Validation case | Expected | Actual | Result |
 |---|---|---|---|

@@ -21,3 +21,8 @@
 - Asked: Add File Save and Open for beam designs, update the spec, and rerun validation.
 - Changed: Added JSON save/open, a configurable deflection limit, spec requirements, and save/open validation cases.
 - Worked: Yes; all 13 existing beam validation checks and the save/open round-trip and invalid-file checks passed.
+
+## 2026-11-24
+- Asked: Add an Export results button that saves x, V, M, and deflection to an Excel-compatible CSV; update the spec and rerun validation.
+- Changed: Added CSV export, updated the spec and validation documentation, and added export checks.
+- Worked: Yes; all 13 beam validation cases and the CSV and save/open checks passed.

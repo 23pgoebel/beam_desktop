@@ -83,8 +83,10 @@ enough.
 - Distinguish the proportional-limit warning from the allowable-stress pass/fail
   result
 - A short calculation summary showing key assumptions and formulas
-- Results remain on-screen only; printing, PDF export, and calculation-data
-  export are out of scope for this version
+- Provide an Export results button that saves x (ft), shear V (kip), moment M
+  (kip-ft), and deflection (in) at each calculation point to an Excel-compatible
+  CSV file with column headers and units
+- Require valid beam inputs and loads before exporting results
 
 ## Save and open
 - Provide File > Save and File > Open for beam designs in a local file
@@ -145,6 +147,7 @@ Additional test cases should cover:
 - Material or beam preset changes after loads are entered
 - Saving and opening a design with point and uniform loads and a custom limit
 - Invalid or unreadable design files leave the current design intact
+- Exported CSV headers and rows match the calculated beam values
 
 Store hand calculations and test cases in `02_validation/README.md` and
 related files under `02_validation/`. Store example screenshots or exported
@@ -158,4 +161,4 @@ results in `03_output/`.
 - Beam self-weight
 - Dynamic or moving loads
 - Metric-unit mode
-- Printing, PDF export, and calculation-data export
+- Printing and PDF export

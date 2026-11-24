@@ -1,5 +1,6 @@
 """Exercise the File menu handlers with a real Tk window and temporary files."""
 import json
+import csv
 import sys
 import tempfile
 from pathlib import Path
@@ -23,6 +24,21 @@ def main():
         before = app.result
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "design.json"
+            csv_path = Path(directory) / "results.csv"
+            with patch("beam_designer.filedialog.asksaveasfilename", return_value=str(csv_path)):
+                app.export_results()
+            with csv_path.open(encoding="utf-8-sig", newline="") as stream:
+                rows = list(csv.reader(stream))
+            assert rows[0] == ["x (ft)", "V (kip)", "M (kip-ft)", "deflection (in)"]
+            expected_rows = list(zip(before["xs"], before["shears"], before["moments"], before["deflections"]))
+            assert len(rows) == len(expected_rows) + 1
+            assert [tuple(map(float, row)) for row in rows[1:]] == expected_rows
+            app.deflection_var.set("0")
+            with patch("beam_designer.filedialog.asksaveasfilename") as dialog, \
+                    patch("beam_designer.messagebox.showerror") as error:
+                app.export_results()
+            assert error.called and not dialog.called
+            app.deflection_var.set("240")
             with patch("beam_designer.filedialog.asksaveasfilename", return_value=str(path)):
                 app.save_design()
             saved = json.loads(path.read_text(encoding="utf-8"))
@@ -66,7 +82,7 @@ def main():
             assert app.grade_var.get() == "Spruce-Pine-Fir No.2" and app.section_var.get() == "2×10"
             assert app.loads == [Load("point", 2, position=20)]
             assert app.result["max_moment"] == 40
-        print("Save/open round trip, custom limit, and invalid-file preservation: PASS")
+        print("CSV export, invalid input, save/open round trip, custom limit, and invalid-file preservation: PASS")
     finally:
         app.destroy()
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import json
+import csv
 import os
 import tempfile
 import tkinter as tk
@@ -274,6 +275,7 @@ class BeamDesigner(tk.Tk):
                   padding=(9, 6), font=("Segoe UI", 11, "bold")).pack(side="left", padx=(0, 10))
         ttk.Label(header, text="Beam Designer", style="Title.TLabel").pack(side="left")
         ttk.Button(header, text="Reset", command=self.reset).pack(side="right", padx=(8, 0))
+        ttk.Button(header, text="Export results", command=self.export_results).pack(side="right", padx=(8, 0))
         ttk.Button(header, text="Load example", style="Primary.TButton", command=self.load_example).pack(side="right")
         ttk.Separator(self).pack(fill="x")
 
@@ -848,6 +850,36 @@ class BeamDesigner(tk.Tk):
             points.extend((x, y))
         if len(points) >= 4:
             c.create_line(*points, fill=color, width=2, smooth=True)
+
+    def export_results(self) -> None:
+        result = self._analyze()
+        if result is None:
+            messagebox.showerror("Cannot export results", "Complete the beam setup and correct any invalid loads before exporting.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(parent=self, title="Export beam results",
+                                            defaultextension=".csv",
+                                            filetypes=[("CSV file", "*.csv"), ("All files", "*.*")])
+        if not path:
+            return
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8-sig", newline="", delete=False,
+                                             dir=os.path.dirname(os.path.abspath(path)),
+                                             prefix=".beam-", suffix=".tmp") as stream:
+                temporary = stream.name
+                writer = csv.writer(stream)
+                writer.writerow(["x (ft)", "V (kip)", "M (kip-ft)", "deflection (in)"])
+                writer.writerows(zip(result["xs"], result["shears"], result["moments"], result["deflections"]))
+            os.replace(temporary, path)
+            temporary = None
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Cannot export results", str(exc), parent=self)
+        finally:
+            if temporary is not None:
+                try:
+                    os.unlink(temporary)
+                except OSError:
+                    pass
 
     def save_design(self) -> None:
         if self._analyze() is None:
