@@ -63,6 +63,112 @@ class Load:
     end: float = 0.0
 
 
+def analyze_beam(length: float, section: dict, material: dict, allowable: float,
+                 support: str, loads: list[Load]) -> dict | None:
+    """Analyze a beam using the same calculation path as the desktop UI."""
+    if (not math.isfinite(length) or length <= 0 or not math.isfinite(allowable)
+            or allowable <= 0 or support not in ("Simply supported", "Cantilever")):
+        return None
+    if not all(math.isfinite(load.magnitude) and load.magnitude != 0 for load in loads):
+        return None
+    valid_loads: list[Load] = []
+    for load in loads:
+        if load.kind == "point" and math.isfinite(load.position) and 0 <= load.position <= length:
+            valid_loads.append(load)
+        elif (load.kind == "uniform" and math.isfinite(load.start) and math.isfinite(load.end)
+              and 0 <= load.start < load.end <= length):
+            valid_loads.append(load)
+    if len(valid_loads) != len(loads):
+        return None
+
+    total_load = 0.0
+    load_moment = 0.0
+    for load in valid_loads:
+        if load.kind == "point":
+            total_load += load.magnitude
+            load_moment += load.magnitude * load.position
+        else:
+            resultant = load.magnitude * (load.end - load.start)
+            total_load += resultant
+            load_moment += resultant * (load.start + load.end) / 2
+    if support == "Simply supported":
+        rb = load_moment / length
+        ra = total_load - rb
+        reactions = f"A {ra:.2f} kip   ·   B {rb:.2f} kip"
+    else:
+        ra, rb = total_load, 0.0
+        reactions = f"Fixed reaction {ra:.2f} kip   ·   Moment {load_moment:.2f} kip-ft"
+
+    # Include all load breakpoints so point and partial uniform loads are
+    # represented at their exact positions in the diagrams and integration.
+    count = 500
+    xs = sorted({length * i / count for i in range(count + 1)} |
+                {q for load in valid_loads for q in
+                 ((load.position,) if load.kind == "point" else (load.start, load.end))})
+    shears: list[float] = []
+    moments: list[float] = []
+    for x in xs:
+        if support == "Simply supported":
+            shear = ra
+            moment = ra * x
+            for load in valid_loads:
+                if load.kind == "point":
+                    if x > load.position:
+                        shear -= load.magnitude
+                        moment -= load.magnitude * (x - load.position)
+                elif x > load.start:
+                    loaded_length = max(0.0, min(x, load.end) - load.start)
+                    shear -= load.magnitude * loaded_length
+                    moment -= load.magnitude * loaded_length * (x - (load.start + min(x, load.end)) / 2)
+        else:
+            shear = 0.0
+            moment = 0.0
+            for load in valid_loads:
+                if load.kind == "point" and x < load.position:
+                    shear += load.magnitude
+                    moment -= load.magnitude * (load.position - x)
+                elif load.kind == "uniform":
+                    start = max(x, load.start)
+                    if load.end > start:
+                        loaded_length = load.end - start
+                        shear += load.magnitude * loaded_length
+                        moment -= load.magnitude * loaded_length * ((load.end + start) / 2 - x)
+        shears.append(shear)
+        moments.append(moment)
+
+    # Integrate EI*v'' = M in inch units. The simply supported beam gets
+    # a linear correction so both end deflections are zero.
+    curvature = [moment * 12_000 / (material["E"] * section["I"]) for moment in moments]
+    slopes = [0.0]
+    deflections = [0.0]
+    for i in range(1, len(xs)):
+        dx_in = (xs[i] - xs[i - 1]) * 12
+        slopes.append(slopes[-1] + (curvature[i - 1] + curvature[i]) * 0.5 * dx_in)
+        deflections.append(deflections[-1] + (slopes[i - 1] + slopes[i]) * 0.5 * dx_in)
+    if support == "Simply supported" and length:
+        end_drift = deflections[-1]
+        deflections = [v - end_drift * x / length for x, v in zip(xs, deflections)]
+
+    def maximum(values: list[float]) -> tuple[float, float]:
+        i = max(range(len(values)), key=lambda j: abs(values[j]))
+        return abs(values[i]), xs[i]
+
+    max_shear, shear_x = maximum(shears)
+    max_moment, moment_x = maximum(moments)
+    max_deflection, deflection_x = maximum(deflections)
+    stress = max_moment * 12_000 / section["S"]
+    limit = length * 12 / 360
+    return {
+        "length": length, "section": section, "material": material,
+        "allowable": allowable, "support": support, "loads": valid_loads,
+        "xs": xs, "shears": shears, "moments": moments, "deflections": deflections,
+        "ra": ra, "rb": rb, "reactions": reactions, "max_shear": max_shear,
+        "shear_x": shear_x, "max_moment": max_moment, "moment_x": moment_x,
+        "max_deflection": max_deflection, "deflection_x": deflection_x,
+        "stress": stress, "limit": limit,
+    }
+
+
 def tooltip(widget: tk.Widget, text: str) -> None:
     """Attach a small help bubble to a control."""
     tip = tk.Toplevel(widget)
@@ -511,95 +617,8 @@ class BeamDesigner(tk.Tk):
         if setup is None:
             return None
         length, section, material, allowable = setup
-        valid_loads: list[Load] = []
-        for load in self.loads:
-            if load.kind == "point" and 0 <= load.position <= length:
-                valid_loads.append(load)
-            elif load.kind == "uniform" and 0 <= load.start < load.end <= length:
-                valid_loads.append(load)
-        if len(valid_loads) != len(self.loads):
-            return None
-
-        support = self.support_var.get()
-        total_load = 0.0
-        load_moment = 0.0
-        for load in valid_loads:
-            if load.kind == "point":
-                total_load += load.magnitude
-                load_moment += load.magnitude * load.position
-            else:
-                wlen = load.magnitude * (load.end - load.start)
-                total_load += wlen
-                load_moment += wlen * (load.start + load.end) / 2
-        if support == "Simply supported":
-            rb = load_moment / length
-            ra = total_load - rb
-            fixed_moment = 0.0
-            reactions = f"A {ra:.2f} kip   ·   B {rb:.2f} kip"
-        else:
-            ra = total_load
-            rb = 0.0
-            fixed_moment = load_moment
-            reactions = f"Fixed reaction {ra:.2f} kip   ·   Moment {fixed_moment:.2f} kip-ft"
-
-        count = 500
-        xs = sorted({length * i / count for i in range(count + 1)} |
-                    {q for load in valid_loads for q in
-                     ((load.position,) if load.kind == "point" else (load.start, load.end))})
-        shears: list[float] = []
-        moments: list[float] = []
-        for x in xs:
-            if support == "Simply supported":
-                shear = ra
-                moment = ra * x
-                for load in valid_loads:
-                    if load.kind == "point":
-                        if x > load.position:
-                            shear -= load.magnitude
-                            moment -= load.magnitude * (x - load.position)
-                    elif x > load.start:
-                        loaded_length = max(0.0, min(x, load.end) - load.start)
-                        shear -= load.magnitude * loaded_length
-                        moment -= load.magnitude * loaded_length * (x - (load.start + min(x, load.end)) / 2)
-            else:
-                shear = 0.0
-                moment = 0.0
-                for load in valid_loads:
-                    if load.kind == "point" and x < load.position:
-                        shear += load.magnitude
-                        moment -= load.magnitude * (load.position - x)
-                    elif load.kind == "uniform":
-                        start = max(x, load.start)
-                        if load.end > start:
-                            loaded_length = load.end - start
-                            shear += load.magnitude * loaded_length
-                            moment -= load.magnitude * loaded_length * ((load.end + start) / 2 - x)
-            shears.append(shear)
-            moments.append(moment)
-
-        # Integrate EI*v'' = M in inch units. The simply supported beam gets
-        # a linear correction so both end deflections are zero.
-        curvature = [moment * 12_000 / (material["E"] * section["I"]) for moment in moments]
-        slopes = [0.0]
-        deflections = [0.0]
-        for i in range(1, len(xs)):
-            dx_in = (xs[i] - xs[i - 1]) * 12
-            slopes.append(slopes[-1] + (curvature[i - 1] + curvature[i]) * 0.5 * dx_in)
-            deflections.append(deflections[-1] + (slopes[i - 1] + slopes[i]) * 0.5 * dx_in)
-        if support == "Simply supported" and length:
-            end_drift = deflections[-1]
-            deflections = [v - end_drift * x / length for x, v in zip(xs, deflections)]
-
-        def maximum(values: list[float]) -> tuple[float, float]:
-            i = max(range(len(values)), key=lambda j: abs(values[j]))
-            return abs(values[i]), xs[i]
-
-        max_shear, shear_x = maximum(shears)
-        max_moment, moment_x = maximum(moments)
-        max_deflection, deflection_x = maximum(deflections)
-        stress = max_moment * 12_000 / section["S"]
-        limit = length * 12 / 360
-        return locals()
+        return analyze_beam(length, section, material, allowable,
+                            self.support_var.get(), self.loads)
 
     def _calculate(self) -> None:
         result = self._analyze()
