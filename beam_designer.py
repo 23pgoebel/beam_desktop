@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import math
+import json
+import os
+import tempfile
 import tkinter as tk
-from dataclasses import dataclass
-from tkinter import ttk
+from dataclasses import asdict, dataclass
+from tkinter import filedialog, messagebox, ttk
 
 
 COLORS = {
@@ -64,10 +67,11 @@ class Load:
 
 
 def analyze_beam(length: float, section: dict, material: dict, allowable: float,
-                 support: str, loads: list[Load]) -> dict | None:
+                 support: str, loads: list[Load], deflection_denominator: float = 360) -> dict | None:
     """Analyze a beam using the same calculation path as the desktop UI."""
     if (not math.isfinite(length) or length <= 0 or not math.isfinite(allowable)
-            or allowable <= 0 or support not in ("Simply supported", "Cantilever")):
+            or allowable <= 0 or support not in ("Simply supported", "Cantilever")
+            or not math.isfinite(deflection_denominator) or deflection_denominator <= 0):
         return None
     if not all(math.isfinite(load.magnitude) and load.magnitude != 0 for load in loads):
         return None
@@ -157,7 +161,7 @@ def analyze_beam(length: float, section: dict, material: dict, allowable: float,
     max_moment, moment_x = maximum(moments)
     max_deflection, deflection_x = maximum(deflections)
     stress = max_moment * 12_000 / section["S"]
-    limit = length * 12 / 360
+    limit = length * 12 / deflection_denominator
     return {
         "length": length, "section": section, "material": material,
         "allowable": allowable, "support": support, "loads": valid_loads,
@@ -165,8 +169,41 @@ def analyze_beam(length: float, section: dict, material: dict, allowable: float,
         "ra": ra, "rb": rb, "reactions": reactions, "max_shear": max_shear,
         "shear_x": shear_x, "max_moment": max_moment, "moment_x": moment_x,
         "max_deflection": max_deflection, "deflection_x": deflection_x,
-        "stress": stress, "limit": limit,
+        "stress": stress, "limit": limit, "deflection_denominator": deflection_denominator,
     }
+
+
+def parse_design(data: object) -> dict:
+    """Validate an entire design before it can replace the current one."""
+    if not isinstance(data, dict) or data.get("version") != 1:
+        raise ValueError("Unsupported or missing design file version.")
+    try:
+        support, material = data["support"], data["material"]
+        grade, section = data["grade"], data["section"]
+        if not all(isinstance(x, str) for x in (support, material, grade, section)):
+            raise ValueError("Invalid material, section, or support.")
+        mat, sec = MATERIALS[material][grade], SECTIONS[material][section]
+        numbers = [data["span_ft"], data["allowable_psi"], data["deflection_denominator"]]
+        if any(isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x) for x in numbers):
+            raise ValueError("Span, allowable stress, and deflection denominator must be finite numbers.")
+        if not isinstance(data["loads"], list):
+            raise ValueError("Loads must be a list.")
+        loads = []
+        for item in data["loads"]:
+            if not isinstance(item, dict) or item.get("kind") not in ("point", "uniform"):
+                raise ValueError("Invalid load type.")
+            fields = ("magnitude", "position") if item["kind"] == "point" else ("magnitude", "start", "end")
+            values = {key: item[key] for key in fields}
+            if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in values.values()):
+                raise ValueError("Load values must be finite numbers.")
+            loads.append(Load(item["kind"], **values))
+        if analyze_beam(numbers[0], sec, mat, numbers[1], support, loads, numbers[2]) is None:
+            raise ValueError("Invalid beam dimensions, limits, support, or loads.")
+        return {"support": support, "material": material, "grade": grade, "section": section,
+                "span_ft": numbers[0], "allowable_psi": numbers[1],
+                "deflection_denominator": numbers[2], "loads": loads}
+    except (KeyError, TypeError, OverflowError) as exc:
+        raise ValueError("Missing or invalid design data.") from exc
 
 
 def tooltip(widget: tk.Widget, text: str) -> None:
@@ -195,6 +232,7 @@ class BeamDesigner(tk.Tk):
         self.minsize(1050, 700)
         self.configure(background=COLORS["white"])
         self.loads: list[Load] = []
+        self.invalid_load_fields: set[tuple[int, str]] = set()
         self.tool = tk.StringVar(value="Point load")
         self.placement = False
         self.drag_start: float | None = None
@@ -224,6 +262,12 @@ class BeamDesigner(tk.Tk):
         style.configure("TCombobox", padding=4)
 
     def _build_shell(self) -> None:
+        menu = tk.Menu(self)
+        file_menu = tk.Menu(menu, tearoff=False)
+        file_menu.add_command(label="Open…", command=self.open_design)
+        file_menu.add_command(label="Save…", command=self.save_design)
+        menu.add_cascade(label="File", menu=file_menu)
+        self.configure(menu=menu)
         header = ttk.Frame(self, padding=(16, 10))
         header.pack(fill="x")
         ttk.Label(header, text="BD", background=COLORS["navy"], foreground="white",
@@ -269,6 +313,7 @@ class BeamDesigner(tk.Tk):
         self.grade_var = tk.StringVar()
         self.section_var = tk.StringVar()
         self.allowable_var = tk.StringVar()
+        self.deflection_var = tk.StringVar(value="360")
         self.support_combo = self._field(setup, "Support type", self.support_var,
                                          ("Simply supported", "Cantilever"))
         self.support_combo.bind("<<ComboboxSelected>>", self._on_setup)
@@ -279,6 +324,8 @@ class BeamDesigner(tk.Tk):
         self.grade_combo.bind("<<ComboboxSelected>>", self._on_material)
         self.section_combo = self._field(setup, "Beam section", self.section_var, ())
         self.section_combo.bind("<<ComboboxSelected>>", self._on_setup)
+        self._field(setup, "Deflection limit (L / denominator)", self.deflection_var).bind(
+            "<KeyRelease>", lambda _event: self._calculate())
         self.setup_error = ttk.Label(setup, text="", foreground=COLORS["red"], wraplength=230)
         self.setup_error.pack(anchor="w", pady=(4, 0))
 
@@ -356,7 +403,7 @@ class BeamDesigner(tk.Tk):
             maximum.pack(side="right")
             self.diagram_max[key] = maximum
             if key == "deflection":
-                tooltip(maximum, "The serviceability limit is span length divided by 360 (L/360).")
+                tooltip(maximum, "The serviceability limit is span length divided by the chosen denominator.")
             plot = tk.Canvas(card, height=105, background="white", highlightthickness=0)
             plot.pack(fill="x", expand=True)
             plot.bind("<Configure>", lambda _e, k=key: self._draw_diagram(k))
@@ -449,6 +496,7 @@ class BeamDesigner(tk.Tk):
         material = MATERIALS[self.material_var.get()].get(self.grade_var.get())
         section = SECTIONS[self.material_var.get()].get(self.section_var.get())
         allowable = self._number(self.allowable_var.get())
+        denominator = self._number(self.deflection_var.get())
         if length is None or length <= 0:
             self.setup_error.configure(text="Enter a span length greater than zero.")
         elif section is None:
@@ -457,6 +505,8 @@ class BeamDesigner(tk.Tk):
             self.setup_error.configure(text="Select a material grade.")
         elif allowable is None or allowable <= 0:
             self.setup_error.configure(text="Enter an allowable bending stress greater than zero.")
+        elif denominator is None or denominator <= 0:
+            self.setup_error.configure(text="Enter a deflection limit denominator greater than zero.")
         else:
             self.setup_error.configure(text="")
             return length, section, material, allowable
@@ -502,6 +552,7 @@ class BeamDesigner(tk.Tk):
         self._calculate()
 
     def _render_loads(self) -> None:
+        self.invalid_load_fields.clear()
         for child in self.load_list.winfo_children():
             child.destroy()
         if not self.loads:
@@ -542,8 +593,11 @@ class BeamDesigner(tk.Tk):
         value = self._number(raw)
         load = self.loads[index]
         if value is None or (field == "magnitude" and value == 0):
+            self.invalid_load_fields.add((index, field))
             self.load_message.configure(text="Load values must be valid numbers; magnitude cannot be zero.")
+            self._calculate()
             return
+        self.invalid_load_fields.discard((index, field))
         setattr(load, field, value)
         setup = self._valid_setup()
         length = setup[0] if setup else None
@@ -614,11 +668,11 @@ class BeamDesigner(tk.Tk):
 
     def _analyze(self) -> dict | None:
         setup = self._valid_setup()
-        if setup is None:
+        if setup is None or self.invalid_load_fields:
             return None
         length, section, material, allowable = setup
         return analyze_beam(length, section, material, allowable,
-                            self.support_var.get(), self.loads)
+                            self.support_var.get(), self.loads, float(self.deflection_var.get()))
 
     def _calculate(self) -> None:
         result = self._analyze()
@@ -697,13 +751,13 @@ class BeamDesigner(tk.Tk):
         self._result_card(self.checks, "Bending stress", f"{r['stress']:,.0f} / {r['allowable']:,.0f} psi",
                           "Maximum stress compared with allowable stress.", bending)
         self._result_card(self.checks, "Deflection", f"{r['max_deflection']:.3f} / {r['limit']:.3f} in",
-                          f"Limit is L/360 ({r['limit']:.3f} in).", deflection)
+                          f"Limit is L/{r['deflection_denominator']:g} ({r['limit']:.3f} in).", deflection)
         self._result_card(self.checks, "Elastic range", f"{r['stress']:,.0f} psi",
                           f"Proportional limit: {r['material']['proportional']:,} psi. Informational warning only.",
                           "WARNING" if elastic == "WARNING" else "PASS")
         assumptions = ttk.Label(self.checks,
                                 text="Assumptions: strong-axis elastic bending; static loads; beam self-weight excluded. "
-                                     "Stress = M/S; deflection limit = L/360.",
+                                     f"Stress = M/S; deflection limit = L/{r['deflection_denominator']:g}.",
                                 style="Muted.TLabel", wraplength=250, justify="left")
         assumptions.pack(anchor="w", pady=(6, 0))
         self.diagram_max["shear"].configure(text=f"|V|max {r['max_shear']:.2f} kip")
@@ -795,6 +849,69 @@ class BeamDesigner(tk.Tk):
         if len(points) >= 4:
             c.create_line(*points, fill=color, width=2, smooth=True)
 
+    def save_design(self) -> None:
+        if self._analyze() is None:
+            messagebox.showerror("Cannot save design", "Complete the beam setup and correct any invalid loads before saving.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(parent=self, title="Save beam design",
+                                            defaultextension=".json",
+                                            filetypes=[("Beam design", "*.json"), ("All files", "*.*")])
+        if not path:
+            return
+        data = {"version": 1, "support": self.support_var.get(),
+                "span_ft": float(self.length_var.get()), "material": self.material_var.get(),
+                "grade": self.grade_var.get(), "section": self.section_var.get(),
+                "allowable_psi": float(self.allowable_var.get()),
+                "deflection_denominator": float(self.deflection_var.get()),
+                "loads": [asdict(load) for load in self.loads]}
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False,
+                                             dir=os.path.dirname(os.path.abspath(path)),
+                                             prefix=".beam-", suffix=".tmp") as stream:
+                temporary = stream.name
+                json.dump(data, stream, indent=2, ensure_ascii=False, allow_nan=False)
+                stream.write("\n")
+            os.replace(temporary, path)
+            temporary = None
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Cannot save design", str(exc), parent=self)
+        finally:
+            if temporary is not None:
+                try:
+                    os.unlink(temporary)
+                except OSError:
+                    pass
+
+    def open_design(self) -> None:
+        path = filedialog.askopenfilename(parent=self, title="Open beam design",
+                                          filetypes=[("Beam design", "*.json"), ("All files", "*.*")])
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8") as stream:
+                design = parse_design(json.load(stream))
+        except (OSError, UnicodeError, ValueError, RecursionError) as exc:
+            messagebox.showerror("Cannot open design", str(exc), parent=self)
+            return
+        self.support_var.set(design["support"])
+        self.length_var.set(str(design["span_ft"]))
+        self.material_var.set(design["material"])
+        self.grade_combo.configure(values=tuple(MATERIALS[design["material"]]))
+        self.section_combo.configure(values=tuple(SECTIONS[design["material"]]))
+        self.grade_var.set(design["grade"])
+        self.section_var.set(design["section"])
+        self.allowable_var.set(str(design["allowable_psi"]))
+        self.deflection_var.set(str(design["deflection_denominator"]))
+        self.loads = design["loads"]
+        self.placement = False
+        self.drag_start = None
+        self.canvas.configure(cursor="")
+        self.load_message.configure(text="")
+        self._render_properties()
+        self._render_loads()
+        self._calculate()
+
     def load_example(self) -> None:
         self.support_var.set("Simply supported")
         self.length_var.set("20")
@@ -802,6 +919,9 @@ class BeamDesigner(tk.Tk):
         self.grade_var.set("A992 Steel")
         self.section_var.set("W12×26")
         self.allowable_var.set("33000")
+        self.deflection_var.set("360")
+        self.grade_combo.configure(values=tuple(MATERIALS["Steel"]))
+        self.section_combo.configure(values=tuple(SECTIONS["Steel"]))
         self.tool.set("Uniform load")
         self._update_load_fields()
         self.loads = [Load("uniform", 1.0, start=0.0, end=20.0)]
@@ -817,6 +937,9 @@ class BeamDesigner(tk.Tk):
         self.grade_var.set("A36 Steel")
         self.section_var.set("")
         self.allowable_var.set("22000")
+        self.deflection_var.set("360")
+        self.grade_combo.configure(values=tuple(MATERIALS["Steel"]))
+        self.section_combo.configure(values=tuple(SECTIONS["Steel"]))
         self.tool.set("Point load")
         self.position_var.set("10")
         self.start_var.set("0")

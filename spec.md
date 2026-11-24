@@ -18,6 +18,7 @@ enough.
 - Material type: steel or lumber
 - Beam shape: steel W-shape or lumber size
 - Beam designation or dimensions
+- Deflection limit as L divided by a positive denominator (default 360)
 - Point loads and uniform loads
 
 ## Beam properties
@@ -63,7 +64,7 @@ enough.
 - Treat the proportional-limit check as an elastic-range warning, not as a
   strength pass/fail limit
 - Maximum bending stress compared with the allowable bending stress
-- Maximum deflection compared with `L/360`
+- Maximum deflection compared with the selected limit (default `L/360`)
 - Report the location of maximum shear, moment, and deflection
 
 ## Outputs
@@ -82,8 +83,16 @@ enough.
 - Distinguish the proportional-limit warning from the allowable-stress pass/fail
   result
 - A short calculation summary showing key assumptions and formulas
-- Results remain on-screen only; printing, PDF export, and data export are
-  out of scope for this version
+- Results remain on-screen only; printing, PDF export, and calculation-data
+  export are out of scope for this version
+
+## Save and open
+- Provide File > Save and File > Open for beam designs in a local file
+- Save and restore support type, span, material and grade, section, allowable
+  bending stress, deflection limit, and all loads
+- Require a valid beam setup and valid loads before saving
+- Recalculate after opening a design and report invalid or unreadable files
+  without replacing the current design
 
 ## Layout
 - Arrange left controls, center beam and diagrams, and right results in the
@@ -105,7 +114,7 @@ enough.
   validation case
 - Highlight the selected support, material, and load in a restrained way
 - Use tooltips for terms such as moment of inertia, section modulus,
-  elastic modulus, and L/360
+  elastic modulus, and the deflection limit
 
 ## Behavior and feedback
 - Update calculations only after valid required inputs are complete
@@ -134,6 +143,8 @@ Additional test cases should cover:
 - Loads at and outside beam endpoints
 - Lumber and W-shape section-property lookups
 - Material or beam preset changes after loads are entered
+- Saving and opening a design with point and uniform loads and a custom limit
+- Invalid or unreadable design files leave the current design intact
 
 Store hand calculations and test cases in `02_validation/README.md` and
 related files under `02_validation/`. Store example screenshots or exported

@@ -16,3 +16,8 @@
 - Changed: Extracted the app's calculation function for headless execution; added a validation runner and README with hand-check cases and results.
 - Worked: Yes; 13/13 validation checks passed, including beam cases, material/section lookups, preset changes, and input boundaries.
 
+
+## 2026-11-24
+- Asked: Add File Save and Open for beam designs, update the spec, and rerun validation.
+- Changed: Added JSON save/open, a configurable deflection limit, spec requirements, and save/open validation cases.
+- Worked: Yes; all 13 existing beam validation checks and the save/open round-trip and invalid-file checks passed.

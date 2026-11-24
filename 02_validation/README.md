@@ -4,6 +4,7 @@ Run the checks from the project root with:
 
 ```powershell
 python 02_validation/run_validation.py
+python 02_validation/save_open_validation.py
 ```
 
 The runner calls `analyze_beam`, the same calculation function used by the
@@ -18,6 +19,10 @@ the reference section/material values are the app's local database values.
 ## Results
 
 Run on 2026-11-24. All 13 validation checks passed.
+
+The save/open check also passed: it round-tripped steel and lumber designs,
+point and uniform loads, allowable stress, and a custom L/240 limit. It
+confirmed that malformed and incomplete files leave the current design intact.
 
 | Validation case | Expected | Actual | Result |
 |---|---|---|---|
